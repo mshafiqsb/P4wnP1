@@ -66,11 +66,8 @@ sudo apt-get -y upgrade # include patched bluetooth stack
 #fi
 
 # hostapd gets installed in even if WiFi isn't present (SD card could be moved from "Pi Zero" to "Pi Zero W" later on)
-sudo apt-get -y install dnsmasq git python-pip python-dev screen sqlite3 inotify-tools hostapd autossh bluez bluez-tools bridge-utils ethtool
+sudo apt-get -y install dnsmasq git python-pip python-dev screen sqlite3 inotify-tools hostapd autossh bluez bluez-tools bridge-utils ethtool  policykit-1 tshark tcpdump iodine
 
-
-# not needed in production setup
-#sudo apt-get install -y tshark tcpdump
 
 # at this point the nameserver in /etc/resolv.conf is set to 127.0.0.1, so we replace it with 8.8.8.8
 #	Note: 
@@ -252,7 +249,10 @@ echo "Installing kernel update ..."
 #        stretch kernel known working is 4.9.45+ (only available via update right now)
 
 # Raspbian stretch with Kernel >= 4.9.50+ needed for working bluetooth nap
-sudo rpi-update 913eddd6d23f14ce34ae473a4c080c5c840ed583 # force kernel 4.9.51+ for nexmon compatability
+#sudo rpi-update 913eddd6d23f14ce34ae473a4c080c5c840ed583 # force kernel 4.9.51+ for nexmon compatability
+
+# Raspbian stretch with Kernel >= 4.9.78+ (working bluetooth, nexmon module compiled for this version)
+sudo rpi-update 23a007716a0c6a8677097be859cf7063ae093d27
 
 # ToDo: the correct branch of nexmon for the current update kernel should be checked out here,
 #       to do this the downloaded kernel version has to be feteched, which is only available after reboot from `uname -r`

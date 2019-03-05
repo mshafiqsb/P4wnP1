@@ -3,7 +3,7 @@
 
 #    This file is part of P4wnP1.
 #
-#    Copyright (c) 2017, Marcus Mengs. 
+#    Copyright (c) 2017, Marcus Mengs.
 #
 #    P4wnP1 is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -35,22 +35,49 @@ function check_wifi()
 
 function generate_dnsmasq_wifi_conf()
 {
+	if $WIFI_ACCESSPOINT_DNS_FORWARD; then
+		DNS_PORT="53"
+	else
+		DNS_PORT="0"
+	fi
+
 	cat <<- EOF > /tmp/dnsmasq_wifi.conf
 		bind-interfaces
-		port=0
+		port=$DNS_PORT
 		interface=wlan0
 		listen-address=$WIFI_ACCESSPOINT_IP
 		dhcp-range=$WIFI_ACCESSPOINT_DHCP_RANGE,$WIFI_ACCESSPOINT_NETMASK,5m
+EOF
 
-		# router
-		#dhcp-option=3,$WIFI_ACCESSPOINT_IP
+	if $WIFI_ACCESSPOINT_DHCP_BE_GATEWAY; then
+		cat <<- EOF >> /tmp/dnsmasq_wifi.conf
+			# router
+			dhcp-option=3,$WIFI_ACCESSPOINT_IP
+EOF
+	else
+		cat <<- EOF >> /tmp/dnsmasq_wifi.conf
+			# router
+			dhcp-option=3
+EOF
+	fi
 
-		# DNS
-		#dhcp-option=6,$WIFI_ACCESSPOINT_IP
+	if $WIFI_ACCESSPOINT_DHCP_BE_DNS; then
+		cat <<- EOF >> /tmp/dnsmasq_wifi.conf
+			# DNS
+			dhcp-option=6,$WIFI_ACCESSPOINT_IP
+EOF
+	else
+		cat <<- EOF >> /tmp/dnsmasq_wifi.conf
+			# DNS
+			dhcp-option=6
+EOF
+	fi
 
 		# NETBIOS NS
 		#dhcp-option=44,$WIFI_ACCESSPOINT_IP
 		#dhcp-option=45,$WIFI_ACCESSPOINT_IP
+
+	cat <<- EOF >> /tmp/dnsmasq_wifi.conf
 
 		dhcp-leasefile=/tmp/dnsmasq_wifi.leases
 		dhcp-authoritative
@@ -74,7 +101,7 @@ function generate_hostapd_conf()
 		hw_mode=g
 
 		# Use channel 6
-		channel=6
+		channel=$WIFI_ACCESSPOINT_CHANNEL
 
 		# Enable 802.11n
 		ieee80211n=1
@@ -88,8 +115,6 @@ function generate_hostapd_conf()
 		# Accept all MAC addresses
 		macaddr_acl=0
 
-		# Use WPA authentication
-		auth_algs=1
 EOF
 
 	if $WIFI_ACCESSPOINT_HIDE_SSID; then
@@ -106,7 +131,11 @@ EOF
 EOF
 	fi
 
+	if $WIFI_ACCESSPOINT_AUTH; then
 	cat <<- EOF >> /tmp/hostapd.conf
+		# Use WPA authentication
+		auth_algs=1
+
 		# Use WPA2
 		wpa=2
 
@@ -119,14 +148,52 @@ EOF
 		# Use AES, instead of TKIP
 		rsn_pairwise=CCMP
 EOF
+	else
+	cat <<- EOF >> /tmp/hostapd.conf
+		# Both open and shared auth
+		auth_algs=3
+EOF
+	fi
+
+#### Note: KARMA attack is done in firmware now, no need to configure it statically, it gets enabled on-demand ###
+
+#	# the following options only apply to hostapd-mana and would fail on legacy hostapd
+#	# as hostapd-mana depends on nexmon driver/firmware we check this, too
+#	if $WIFI_ACCESSPOINT_MANA && $WIFI_NEXMON; then
+#	cat <<- EOF >> /tmp/hostapd.conf
+#		enable_mana=1
+#		mana_loud=$WIFI_ACCESSPOINT_KARMA_LOUD
+#EOF
+#	fi
+}
+
+
+
+function WIFI_enable_KARMA()
+{
+	$wdir/nexmon/karmatool.py -k 1
+}
+
+function WIFI_disable_KARMA()
+{
+	$wdir/nexmon/karmatool.py -k 0
+}
+
+function WIFI_enable_KARMA_LOUD()
+{
+	$wdir/nexmon/karmatool.py -b 1
+}
+
+function WIFI_disable_KARMA_LOUD()
+{
+	$wdir/nexmon/karmatool.py -b 0
 }
 
 function start_wifi_accesspoint()
 {
 	generate_hostapd_conf
 
-	hostapd /tmp/hostapd.conf > /dev/null &
-#	hostapd /tmp/hostapd.conf
+	hostapd -d /tmp/hostapd.conf > /tmp/hostapd.log &
 
 	# configure interface
 	ifconfig wlan0 $WIFI_ACCESSPOINT_IP netmask $WIFI_ACCESSPOINT_NETMASK
@@ -145,7 +212,7 @@ function generate_wpa_entry()
 
 	#wpa_passphrase $1 $2 | grep -v -e "#psk"
 	# output result only if valid password was used (8..63 characters)
-	res=$(wpa_passphrase $1 $2) && echo "$res" | grep -v -e "#psk"
+	res=$(wpa_passphrase "$1" "$2") && echo "$res" | grep -v -e "#psk"
 }
 
 function scan_for_essid()
@@ -176,7 +243,7 @@ function generate_wpa_supplicant_conf()
 	# generates temporary configuration (sudo prepended to allow running from user pi if needed)
 	sudo bash -c "cat /etc/wpa_supplicant/wpa_supplicant.conf > /tmp/wpa_supplicant.conf"
 
-	# ToDo: check if configured WiFi ESSID already exists, 
+	# ToDo: check if configured WiFi ESSID already exists,
 	# if
 	#	WIFI_CLIENT_STORE_NETWORK == true
 	#	WIFI_CLIENT_OVERWRITE_PSK == true
@@ -186,10 +253,10 @@ function generate_wpa_supplicant_conf()
 	#	WIFI_CLIENT_STORE_NETWORK == false
 	# delete the network entry, to overwrite the old entry in next step (but don't store it later on)
 
-	generate_wpa_entry $1 $2 > /tmp/current_wpa.conf
+	generate_wpa_entry "$1" "$2" > /tmp/current_wpa.conf
 	sudo bash -c 'cat /tmp/current_wpa.conf >> /tmp/wpa_supplicant.conf'
 
-	# ToDo: store the new network back to persistent config 
+	# ToDo: store the new network back to persistent config
 	# if
 	#	WIFI_CLIENT_STORE_NETWORK == true
 	# cat /tmp/wpa_supplicant.conf > /etc/wpa_supplicant/wpa_supplicant.conf # store config change
@@ -213,7 +280,7 @@ function start_wifi_client()
 
 	if $WIFI_CLIENT; then
 		echo "Try to find WiFi $WIFI_CLIENT_SSID"
-		res=$(scan_for_essid $WIFI_CLIENT_SSID)
+		res=$(scan_for_essid "$WIFI_CLIENT_SSID")
 		if [ "$res" == "WPA2_PSK" ]; then
 			echo "Network $WIFI_CLIENT_SSID found"
 			echo "... creating config"
